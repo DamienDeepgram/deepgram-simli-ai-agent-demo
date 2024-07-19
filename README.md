@@ -1,5 +1,5 @@
 # simli-ai-agent-demo
- A simple Simli WebRTC AI Agent demo with OpenAI for LLM and ElevnLabs for speech
+ A simple Simli WebRTC AI Agent demo with OpenAI for LLM and Deepgram for speech to text and text to speech
  
 ![sample](https://github.com/user-attachments/assets/6f3445ec-fbf0-4272-9312-6efafd3a0cfe)
 
@@ -8,14 +8,14 @@
 ```js
 NEXT_PUBLIC_SIMLI_API_KEY= YOUR-SIMLI-KEY
 NEXT_PUBLIC_OPENAI_API_KEY= YOUR-OPENAI-KEY
-NEXT_PUBLIC_ELEVENLABS_API_KEY= YOUR-ELEVENLABS-KEY
+NEXT_PUBLIC_DEEPGRAM_API_KEY= YOUR-DEEPGRAM-KEY
 ```
 
 Simli: [GET API KEY](https://www.simli.com/profile)
 
 OpenAI: [GET API KEY](https://platform.openai.com/settings/profile?tab=api-keys)
 
-ElevenLabs: [GET API KEY](https://elevenlabs.io/app)
+Deepgram: [GET API KEY](https://deepgram.com)
 
 2. Insall packages
 ```bash
