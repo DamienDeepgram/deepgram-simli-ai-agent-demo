@@ -204,7 +204,7 @@ const Demo = () => {
     return { message, isConnected, sendMessage, sendAudioData, startWebSocket };
   };
 
-  const { message, isConnected, sendMessage, sendAudioData, startWebSocket } = useWebSocket('ws://localhost:3001');
+  const { message, isConnected, sendMessage, sendAudioData, startWebSocket } = useWebSocket(process.env.NEXT_PUBLIC_SERVER_URL);
 
   useEffect(() => {
     if (videoRef.current && audioRef.current) {
