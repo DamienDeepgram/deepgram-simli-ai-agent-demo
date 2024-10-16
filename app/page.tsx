@@ -31,27 +31,72 @@ export const useWebSocket = (url: string) => {
     });
   };
 
-  useEffect(() => {
+  function convertAudio(audioData) {
+    // See https://stackoverflow.com/a/61481513 for tips on smooth playback
+  
+    const audioDataView = new Int16Array(audioData);
+  
+    if (audioDataView.length === 0) {
+      console.error("Received audio data is empty.");
+      return;
+    }
+
+    const audioContext = new (window.AudioContext)({ latencyHint: "interactive", sampleRate: 48000 });
+  
+    // 1 channel, 48 kHz sample rate
+    const audioBuffer = audioContext.createBuffer(
+      1,
+      audioDataView.length,
+      48000
+    ); 
+    const audioBufferChannel = audioBuffer.getChannelData(0);
+  
+    // Copy audio data to the buffer
+    for (var i = 0; i < audioDataView.length; i++) {
+      // Convert linear16 PCM to float [-1, 1]
+      audioBufferChannel[i] = audioDataView[i] / 32768; 
+    }
+    return audioBufferChannel;
+  }
+
+  const startWebSocket = () => {
     console.log('WebSocket connecting');
     socketRef.current = new WebSocket(url);
+    socketRef.current.binaryType = 'arraybuffer';
 
     socketRef.current.onopen = () => {
       setIsConnected(true);
       console.log('WebSocket connected');
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ audio: true })
+        const constraints = {
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            autoGainControl: true,
+            voiceIsolation: true,
+            noiseSuppression: false,
+            latency: 0,
+          },
+        };
+        navigator.mediaDevices.getUserMedia(constraints)
           .then((stream) => {
-            const recorder = new MediaRecorder(stream);
-            setMediaRecorder(recorder);
-  
-            recorder.ondataavailable = (event) => {
-              if (event.data.size > 0) {
-                console.log('Sending audio to deepgram');
-                sendAudioData(event.data);
-              }
+            const audioContext = new AudioContext();
+            const microphone = audioContext.createMediaStreamSource(stream);
+            const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            processor.onaudioprocess = function (event) {
+              const inputData = event.inputBuffer.getChannelData(0);
+              const rms = Math.sqrt(
+                inputData.reduce((sum, value) => sum + value * value, 0) /
+                inputData.length
+              );
+              var downsampledData = downsample(inputData, 48000, 16000);
+              sendAudioData(convertFloat32ToInt16(downsampledData));
             };
-  
-            recorder.start(250); // Record in chunks of 250ms
+
+            microphone.connect(processor);
+            processor.connect(audioContext.destination);
           })
           .catch((error) => console.error('Error accessing microphone:', error));
       } else {
@@ -61,20 +106,20 @@ export const useWebSocket = (url: string) => {
 
     socketRef.current.onmessage = (event) => {
       console.log('socketRef onmessage', event.data);
-      // setMessage(event.data);
-      blobToUint8Array(event.data).then((pcm16Data) => {
-        // const pcm16Data = new Uint8Array(event.data);
-        console.log('pcm16Data', pcm16Data);
+      if (typeof event.data === "string") {
+        console.log("Text message received:", event.data);
+      } else if (event.data instanceof ArrayBuffer) {
+        console.log('pcm16Data', event.data);
 
-        // Step 6: Send audio data to WebRTC as 6000 byte chunks
         const chunkSize = 6000;
-        for (let i = 0; i < pcm16Data.length; i += chunkSize) {
-          const chunk = pcm16Data.slice(i, i + chunkSize);
-          simliClient.sendAudioData(chunk);
+        for (let i = 0; i < event.data.byteLength; i += chunkSize) {
+          const chunk = event.data.slice(i, i + chunkSize);
+          const uint8Array = new Uint8Array(chunk);
+          simliClient.sendAudioData(uint8Array);
         }
-      }).catch((error) => {
-        console.error('Error converting blob to Uint8Array:', error);
-      });
+      } else {
+        console.log('Received message:', event.data);
+      }
     };
 
     socketRef.current.onclose = () => {
@@ -85,11 +130,45 @@ export const useWebSocket = (url: string) => {
     socketRef.current.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
+  };
 
-    return () => {
-      socketRef.current?.close();
-    };
-  }, [url]);
+  function downsample(buffer, fromSampleRate, toSampleRate) {
+    if (fromSampleRate === toSampleRate) {
+      return buffer;
+    }
+    var sampleRateRatio = fromSampleRate / toSampleRate;
+    var newLength = Math.round(buffer.length / sampleRateRatio);
+    var result = new Float32Array(newLength);
+    var offsetResult = 0;
+    var offsetBuffer = 0;
+    while (offsetResult < result.length) {
+      var nextOffsetBuffer = Math.round(
+        (offsetResult + 1) * sampleRateRatio
+      );
+      var accum = 0, count = 0;
+      for (
+        var i = offsetBuffer;
+        i < nextOffsetBuffer && i < buffer.length;
+        i++
+      ) {
+        accum += buffer[i];
+        count++;
+      }
+      result[offsetResult] = accum / count;
+      offsetResult++;
+      offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+  }
+  
+  function convertFloat32ToInt16(buffer) {
+    var l = buffer.length;
+    var buf = new Int16Array(l);
+    while (l--) {
+      buf[l] = Math.min(1, buffer[l]) * 0x7fff;
+    }
+    return buf.buffer;
+  }
 
   const sendMessage = (msg: string) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
@@ -97,13 +176,22 @@ export const useWebSocket = (url: string) => {
     }
   };
 
-  const sendAudioData = (audioData: Blob) => {
+  const sendAudioData = (audioData: ArrayBuffer) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(audioData);
+    } else {
+      console.log('socket not open', audioData);
     }
   };
 
-  return { message, isConnected, sendMessage, sendAudioData };
+  // Close the WebSocket connection when the component is unmounted
+  useEffect(() => {
+    return () => {
+      socketRef.current?.close();
+    };
+  }, []);
+
+  return { message, isConnected, sendMessage, sendAudioData, startWebSocket };
 };
 
 const Demo = () => {
@@ -116,7 +204,7 @@ const Demo = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const { message, isConnected, sendMessage, sendAudioData } = useWebSocket('ws://localhost:3000');
+  const { message, isConnected, sendMessage, sendAudioData, startWebSocket } = useWebSocket('ws://localhost:3001');
 
   useEffect(() => {
     if (videoRef.current && audioRef.current) {
@@ -128,6 +216,8 @@ const Demo = () => {
         handleSilence: true,
         videoRef: videoRef,
         audioRef: audioRef,
+        maxSessionLength: 300, 
+        maxIdleTime: 60
       };
 
       simliClient.Initialize(SimliConfig);
@@ -141,15 +231,25 @@ const Demo = () => {
   },[videoRef, audioRef]);
 
   const handleStart = () => {
+    startWebSocket();
+    simliClient.on('connected', () => {
+      console.log('Simli Client connected');
+       // Step 2: Send empty audio data to WebRTC to start rendering
+       const audioData = new Uint8Array(6000).fill(0);
+       simliClient.sendAudioData(audioData);
+    });
+
+    simliClient.on('disconnected', (e) => {
+      console.log('SimliClient has disconnected!', e);
+    }); 
+    
+    simliClient.on('failed', (e) => {
+        console.log('SimliClient has failed to connect!', e);
+    }); 
+
     // Step 1: Start WebRTC
     simliClient.start();
     setStartWebRTC(true);
-
-    setTimeout(() => {
-      // Step 2: Send empty audio data to WebRTC to start rendering
-      const audioData = new Uint8Array(6000).fill(0);
-      simliClient.sendAudioData(audioData);
-    }, 4000);
     
     audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     return () => {

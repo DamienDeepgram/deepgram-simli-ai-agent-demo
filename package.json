@@ -18,7 +18,7 @@
     "openai": "^4.52.7",
     "react": "^18",
     "react-dom": "^18",
-    "simli-client": "^1.0.0",
+    "simli-client": "^1.1.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
