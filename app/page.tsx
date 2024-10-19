@@ -3,7 +3,7 @@ import React, { useState, useRef, use, useEffect } from 'react';
 import axios from 'axios';
 import { SimliClient } from 'simli-client';
 
-const simli_faceid = '95708b15-bcb8-4d40-a4c5-b233778858b4';
+const simli_faceid = 'c17e6135-7bbc-48e9-b424-ae5450df8820';
 
 const simliClient = new SimliClient();
 
