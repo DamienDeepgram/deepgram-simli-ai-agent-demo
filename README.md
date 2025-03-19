@@ -9,7 +9,7 @@
 NEXT_PUBLIC_SIMLI_API_KEY= YOUR-SIMLI-KEY
 NEXT_PUBLIC_DEEPGRAM_API_KEY= YOUR-DEEPGRAM-KEY
 NEXT_PUBLIC_SERVER_URL=ws://localhost:3001 (Update this if running the server publicly)
-```
+``` 
 
 Simli: [GET API KEY](https://www.simli.com/profile)
 
